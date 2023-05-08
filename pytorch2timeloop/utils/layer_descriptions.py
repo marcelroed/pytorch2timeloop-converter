@@ -68,12 +68,45 @@ class ConvLayerDescription(BaseConvLayerDescription):
     h_pad: int
     w_stride: int
     h_stride: int
-    n: int
 
     def to_yaml(self):
         config = super().to_yaml()
         config['problem']['instance']['M'] = self.m
         return config
+
+
+@dataclass
+class ConvLayerTransposedDescription(BaseConvLayerDescription):
+    problem_template = "convolution"
+    m: int  # Output channels
+
+    w: int  # Width -- Only used to compute q
+    h: int  # Height -- Only used to compute p
+    c: int  # Input channels
+    n: int  # Batch size
+    s: int  # Filter width
+    r: int  # Filter height
+    w_pad: int  # Width padding
+    h_pad: int  # Height padding
+    w_stride: int  # Width stride
+    h_stride: int  # Height stride
+
+    @property
+    def q(self):
+        dilation_w = 1
+        return (self.w - 1) * self.w_stride - 2 * self.w_pad + dilation_w * (self.s - 1) + 1
+
+    @property
+    def p(self):
+        dilation_h = 1
+        return (self.h - 1) * self.h_stride - 2 * self.h_pad + dilation_h * (self.r - 1) + 1
+
+
+    def to_yaml(self):
+        config = super().to_yaml()
+        config['problem']['instance']['M'] = self.m
+        return config
+
 
 @dataclass
 class GroupedConvLayerDescription(BaseConvLayerDescription):

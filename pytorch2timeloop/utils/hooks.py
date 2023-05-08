@@ -18,7 +18,7 @@ from typing import Optional, Callable, Any
 import torch.nn as nn
 import transformers.models.distilbert.modeling_distilbert
 
-from pytorch2timeloop.utils.layer_descriptions import DepthWiseConvLayerDescription, ConvLayerDescription, MatrixMatrixMultiplyLayerDescription
+from pytorch2timeloop.utils.layer_descriptions import DepthWiseConvLayerDescription, ConvLayerDescription, MatrixMatrixMultiplyLayerDescription, ConvLayerTransposedDescription
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,34 @@ def _conv_hook(summary, batch_size):
 
     return hook
 
+
+def _conv_transpose_hook(summary, batch_size):
+    """
+    A hook for convolutional (including depth-wise convolutional) transpose layers, based on nn.ConvTranspose2d.
+
+    :param summary: the summary list we are adding to
+    :param batch_size: the input batch size
+    :return: a PyTorch module forward hook to collect a `LayerDescription` about this convolutional layer
+    """
+    def hook(module, input, output):
+        input_shape = input[0].size()
+        description = ConvLayerTransposedDescription(
+            w=input_shape[2],
+            h=input_shape[3],
+            c=module.in_channels,
+            m=module.out_channels,
+            s=module.kernel_size[0],
+            r=module.kernel_size[1],
+            w_stride=module.stride[0],
+            h_stride=module.stride[1],
+            w_pad=module.padding[0],
+            h_pad=module.padding[1],
+            n=batch_size,
+            name="conv_transpose_layer"
+        )
+        summary.append(description)
+
+    return hook
 
 def _linear_hook(summary, batch_size):
     """
@@ -219,6 +247,9 @@ def hook_for(module: nn.Module, summary: list, batch_size: int, convert_fc=False
         return _linear_hook(summary, batch_size)
     elif isinstance(module, nn.Conv2d):
         return _conv_hook(summary, batch_size)
+    elif isinstance(module, nn.ConvTranspose2d):
+        print('Running conv transpose hook')
+        return _conv_transpose_hook(summary, batch_size)
     elif isinstance(module, null_ops):
         # Dropout is not used during inference
         return _null_hook(summary, batch_size)
@@ -227,5 +258,8 @@ def hook_for(module: nn.Module, summary: list, batch_size: int, convert_fc=False
             return _layer_norm_hook(summary, batch_size)
     elif isinstance(module, transformers.models.bert.modeling_bert.BertSelfAttention):
         return _multihead_self_attention(summary, batch_size)
+
+    elif isinstance(module, nn.BatchNorm2d):
+        pass
 
     logger.warning("unknown module type %s", module.__class__)
